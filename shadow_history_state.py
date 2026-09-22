@@ -61,3 +61,62 @@ def merge_history_state(source_state: dict, target_state: dict, id_map: dict[str
         if old in valid_map and isinstance(root, str) and root.startswith('/'):
             hints.setdefault(valid_map[old], root)
     return target
+
+
+def assign_synced_projects(home, thread_ids, can_write):
+    """Attach new histories to existing local projects by cwd, preserving user choices.
+
+    No project, configuration or pin is copied from another instance. The caller
+    serializes managed launches; can_write is checked again before each mutation.
+    """
+    import json
+    import time
+    from pathlib import Path
+    import shadow_history as history
+    from shadow_seed import source_projects
+    home = Path(home)
+    projects = source_projects(home)
+    if not projects or not thread_ids:
+        return 0
+    state_path = home/'.codex-global-state.json'
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    local = state.get('local-projects', {})
+    assignments = state.setdefault('thread-project-assignments', {})
+    local_by_roots = {tuple(p.get('rootPaths', [])): ident for ident,p in local.items()}
+    candidates = []
+    for p in projects:
+        roots = tuple(r['path'] for r in p['roots'])
+        for root in roots:
+            candidates.append((root.rstrip('/'), p['id'], local_by_roots.get(roots)))
+    candidates.sort(key=lambda row: len(row[0]), reverse=True)
+    changed = 0
+    json_changed = False
+    with history.connect(home/history.STATE) as db:
+        for ident in set(thread_ids):
+            row = db.execute('SELECT cwd,project_id FROM threads WHERE id=?',(ident,)).fetchone()
+            if (not row or row['project_id'] or ident in assignments
+                    or ident in state.get('projectless-thread-ids', [])):
+                continue
+            match = next((p for p in candidates if row['cwd']==p[0] or row['cwd'].startswith(p[0]+'/')),None)
+            if match is None:
+                continue
+            if not can_write():
+                break
+            db.execute('UPDATE threads SET project_id=? WHERE id=? AND project_id IS NULL',(match[1],ident))
+            changed += 1
+            if match[2]:
+                assignments[ident] = {'projectKind':'local','projectId':match[2]}
+                json_changed = True
+    if json_changed and can_write():
+        backup = home/'.shadow-backups'/('sync-projects-'+str(time.time_ns()))
+        backup.mkdir(parents=True, mode=0o700)
+        if state_path.exists():
+            old = backup/state_path.name
+            old.write_bytes(state_path.read_bytes());old.chmod(0o600)
+        temporary = state_path.with_suffix('.shadow-tmp')
+        temporary.write_text(json.dumps(state,ensure_ascii=False));temporary.chmod(0o600)
+        if can_write():
+            temporary.replace(state_path)
+        else:
+            temporary.unlink()
+    return changed

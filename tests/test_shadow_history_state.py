@@ -51,3 +51,22 @@ class HistoryStateTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class SyncedProjectTests(unittest.TestCase):
+    def test_project_roots_match_without_changing_existing_pins_or_assignments(self):
+        import tempfile,json,sqlite3
+        from pathlib import Path
+        from shadow_history_state import assign_synced_projects
+        with tempfile.TemporaryDirectory() as temp:
+            home=Path(temp);db=sqlite3.connect(home/'state_5.sqlite')
+            db.executescript("CREATE TABLE projects(id TEXT,name TEXT,metadata TEXT,position INTEGER);CREATE TABLE project_roots(project_id TEXT,path TEXT,position INTEGER);CREATE TABLE threads(id TEXT,cwd TEXT,project_id TEXT,is_pinned INTEGER);INSERT INTO projects VALUES('core','Work','{}',0);INSERT INTO project_roots VALUES('core','/work',0);INSERT INTO threads VALUES('new','/work/src',NULL,0);INSERT INTO threads VALUES('own','/work/src','other',1);")
+            db.commit();db.close()
+            state={'local-projects':{'local':{'rootPaths':['/work']}},'pinned-thread-ids':['own']}
+            path=home/'.codex-global-state.json';path.write_text(json.dumps(state))
+            self.assertEqual(assign_synced_projects(home,['new','own'],lambda:False),0)
+            self.assertEqual(assign_synced_projects(home,['new','own'],lambda:True),1)
+            result=json.loads(path.read_text())
+            self.assertEqual(result['pinned-thread-ids'],['own'])
+            self.assertEqual(result['thread-project-assignments']['new']['projectId'],'local')
+            db=sqlite3.connect(home/'state_5.sqlite')
+            self.assertEqual(db.execute("SELECT project_id,is_pinned FROM threads WHERE id='own'").fetchone(),('other',1));db.close()

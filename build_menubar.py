@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import sys
 
+from shadow_updates import CURRENT_VERSION
+
 ROOT = Path(__file__).resolve().parent
 APP = ROOT / '.runtime' / 'Codex Shadow Clones.app'
 
@@ -37,10 +39,12 @@ def build():
             'CFBundleDisplayName': 'Codex 影分身',
             'CFBundleExecutable': 'ShadowMenu',
             'CFBundlePackageType': 'APPL',
-            'CFBundleShortVersionString': '0.2.0',
-            'CFBundleVersion': '3',
+            'CFBundleShortVersionString': CURRENT_VERSION,
+            'CFBundleVersion': CURRENT_VERSION,
             'CFBundleIconFile': 'AppIcon',
             'LSUIElement': True,
+            'NSSupportsAutomaticTermination': False,
+            'NSSupportsSuddenTermination': False,
             'LSMinimumSystemVersion': '11.0',
             'NSHighResolutionCapable': True,
             'ShadowProjectRoot': str(ROOT),

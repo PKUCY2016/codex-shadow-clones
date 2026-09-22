@@ -43,12 +43,32 @@ final class ShadowMenu: NSObject, NSApplicationDelegate {
         ninjas.isTemplate = true
         ninjas.accessibilityDescription = "三个忍者 · Codex 影分身"
         item.button?.image = ninjas
-        item.button?.imagePosition = .imageLeading
-        item.button?.title = " 影"
+        item.button?.title = ""
+        item.button?.imagePosition = .imageOnly
         item.button?.toolTip = "Codex 影分身 · 切换窗口与查看额度"
+        let applicationMenu = NSMenu()
+        applicationMenu.addItem(quitMenuItem())
+        let mainMenu = NSMenu()
+        let applicationItem = NSMenuItem()
+        applicationItem.submenu = applicationMenu
+        mainMenu.addItem(applicationItem)
+        NSApp.mainMenu = mainMenu
         rebuild()
         fetch()
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in self?.fetch() }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // The dashboard is optional; keep the menu companion available without windows.
+        return false
+    }
+
+    private func quitMenuItem() -> NSMenuItem {
+        let entry = NSMenuItem(title: "退出菜单栏（保留分身与监控）",
+                               action: #selector(quit), keyEquivalent: "q")
+        entry.keyEquivalentModifierMask = [.command]
+        entry.target = self
+        return entry
     }
 
     private func credentials() -> String? {
@@ -135,12 +155,19 @@ final class ShadowMenu: NSObject, NSApplicationDelegate {
             add(menu, selected + name + " · " + amount + running, #selector(openProfile(_:)), id: id)
         }
         menu.addItem(.separator())
+        add(menu, "统一同步历史（运行实例延后）", #selector(syncHistory))
         add(menu, "刷新账号额度", #selector(refreshQuota))
         add(menu, "创建新分身…", #selector(createClone))
         add(menu, "打开管理面板", #selector(openDashboard))
+        let update = state["update"] as? [String: Any] ?? [:]
+        if update["status"] as? String == "available", let latest = update["latestVersion"] as? String {
+            add(menu, "发现新版 v" + latest + " · 查看安装说明", #selector(openUpdate))
+        }
+        add(menu, update["status"] as? String == "checking" ? "正在检查新版…" : "检查软件更新",
+            update["status"] as? String == "checking" ? nil : #selector(checkUpdates))
         menu.addItem(.separator())
         add(menu, "切换窗口不会迁移正在运行的任务")
-        add(menu, "退出菜单栏（保留分身与监控）", #selector(quit))
+        menu.addItem(quitMenuItem())
         item.menu = menu
     }
 
@@ -173,9 +200,16 @@ final class ShadowMenu: NSObject, NSApplicationDelegate {
         guard let id = sender.representedObject as? String else { return }
         perform(["action": "open", "id": id])
     }
+    @objc private func syncHistory() { perform(["action": "history_all"]) }
     @objc private func refreshQuota() { perform(["action": "refresh"]) }
     @objc private func createClone() { perform(["action": "create"]) }
     @objc private func openDashboard() { runPython("dashboard") }
+    @objc private func checkUpdates() { perform(["action": "check_updates"]) }
+    @objc private func openUpdate() {
+        if let url = URL(string: "https://github.com/PKUCY2016/codex-shadow-clones/blob/main/README.md") {
+            NSWorkspace.shared.open(url)
+        }
+    }
     @objc private func quit() { NSApp.terminate(nil) }
 }
 
