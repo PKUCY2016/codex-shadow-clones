@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Three ninja shadow clones">
+<rect width="256" height="256" rx="58" fill="#0b1220"/>
+<defs><g id="n"><path d="M-45 48Q-44 17-25 8A37 37 0 1 1 25 8Q44 17 45 48Z" fill="#182b40" stroke="currentColor" stroke-width="4"/><path d="M-31-18Q0-30 31-18L27 0Q0-8-27 0Z" fill="currentColor"/><path d="m-19-15 12 4m14 0 12-4" stroke="#07111b" stroke-width="5" stroke-linecap="round"/><path d="M-25 17 29 8 25 25-24 30Z" fill="currentColor"/><path d="m27 13 25 6-8 13-19-10" fill="currentColor"/></g></defs>
+<use href="#n" transform="translate(65 110) scale(.82)" color="#70bfff"/><use href="#n" transform="translate(191 110) scale(.82)" color="#ac9cff"/><use href="#n" transform="translate(128 143)" color="#79edc1"/>
+</svg>
