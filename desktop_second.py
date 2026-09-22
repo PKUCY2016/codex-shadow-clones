@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import plistlib
 import subprocess
+from shadow_desktop_env import desktop_environment
 
 ROOT = Path(__file__).resolve().parent
 BASE = ROOT / '.runtime' / 'desktop-b'
@@ -34,10 +35,7 @@ def prepare():
 def launch():
     home, ui = prepare()
     # Remove inherited overrides. HOME and the original app are unchanged.
-    env = dict(os.environ)
-    for key in ('CODEX_HOME', 'CODEX_SQLITE_HOME', 'CODEX_ELECTRON_USER_DATA_PATH',
-                'OPENAI_API_KEY', 'CODEX_API_KEY'):
-        env.pop(key, None)
+    env = desktop_environment(os.environ)
     args = ['/usr/bin/open', '-n', '--env', 'CODEX_HOME=' + str(home),
             '--env', 'CODEX_ELECTRON_USER_DATA_PATH=' + str(ui),
             str(APP), '--args', '--user-data-dir=' + str(ui)]

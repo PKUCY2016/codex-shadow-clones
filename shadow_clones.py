@@ -18,9 +18,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 from desktop_second import APP, CHECKED
-from shadow_seed import seed_home
+from shadow_seed import seed_home, repair_bundled_marketplace
 from shadow_quota import read_quota
 from shadow_updates import UpdateChecker
+from shadow_desktop_env import desktop_environment
 
 ROOT = Path(__file__).resolve().parent
 RUNTIME = ROOT / '.runtime'
@@ -28,6 +29,29 @@ REGISTRY = RUNTIME / 'shadow-clones.json'
 SERVER_INFO = RUNTIME / 'shadow-server.json'
 PORT = 18318
 POLL_SECONDS = 120
+
+
+def profile_storage_root():
+    """Return the physical root for newly-created profiles.
+
+    The repository's runtime directory is intentionally retained for legacy
+    profiles and test fixtures.  New real profiles live below a short path so
+    Codex's default Unix-socket address stays within macOS's limit.  An
+    explicit environment variable is useful for packaging and relocation.
+    """
+    configured = os.environ.get('CODEX_SHADOW_PROFILE_ROOT')
+    if configured:
+        return Path(configured).expanduser().resolve()
+    if RUNTIME != ROOT / '.runtime':
+        return RUNTIME / 'clones'
+    return Path.home() / '.codex-shadow'
+
+
+def archive_root():
+    root = profile_storage_root()
+    if root == RUNTIME / 'clones':
+        return RUNTIME / 'deleted-clones'
+    return root / 'deleted-clones'
 
 
 def private_json(path, value):
@@ -103,10 +127,7 @@ def launch_profile(profile, pid=None):
     if profile['source']:
         # Do not spawn another original instance with shared databases.
         raise RuntimeError('原实例未运行，请从应用程序打开原 Codex。')
-    env = dict(os.environ)
-    for key in ('CODEX_HOME', 'CODEX_SQLITE_HOME', 'CODEX_ELECTRON_USER_DATA_PATH',
-                'OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL'):
-        env.pop(key, None)
+    env = desktop_environment(os.environ)
     subprocess.run(['/usr/bin/open', '-n', '--env', 'CODEX_HOME='+profile['home'],
                     '--env', 'CODEX_ELECTRON_USER_DATA_PATH='+profile['ui'], str(APP),
                     '--args', '--user-data-dir='+profile['ui']], env=env, check=True)
@@ -221,6 +242,9 @@ class Manager:
             pid = process_map(self.data['profiles'])[identifier]
             if profile.get('pending_sync') and not pid:
                 self.sync(identifier)
+            if not pid and not profile['source']:
+                repair_bundled_marketplace(Path(profile['home']),
+                    lambda: process_map(self.data['profiles'])[identifier] is None)
             launch_profile(profile, pid)
             self.data['selected'] = identifier
             self.save()
@@ -247,7 +271,11 @@ class Manager:
             match = re.fullmatch(r'codex([1-9][0-9]*)', profile['id'])
             if match:
                 numbers.append(int(match[1]))
-        for parent in (RUNTIME/'clones', RUNTIME/'deleted-clones'):
+        parents = []
+        for parent in (profile_storage_root(), archive_root(), RUNTIME/'clones', RUNTIME/'deleted-clones'):
+            if parent not in parents:
+                parents.append(parent)
+        for parent in parents:
             self.validate_managed_path(parent)
             if parent.exists():
                 for child in parent.iterdir():
@@ -259,13 +287,21 @@ class Manager:
     @staticmethod
     def validate_managed_path(path):
         """Check the managed ancestors without following directory symlinks."""
-        try:
-            relative = path.relative_to(RUNTIME)
-        except ValueError:
-            raise RuntimeError('分身路径不在受管目录内，已拒绝操作。') from None
+        roots = [RUNTIME, profile_storage_root(), archive_root()]
+        relative = None
+        root = None
+        for candidate in roots:
+            try:
+                relative = path.relative_to(candidate)
+                root = candidate
+                break
+            except ValueError:
+                continue
+        if relative is None:
+            raise RuntimeError('分身路径不在受管目录内，已拒绝操作。')
         if '..' in relative.parts:
             raise RuntimeError('分身路径包含上级目录，已拒绝操作。')
-        current = RUNTIME
+        current = root
         for part in (None, *relative.parts):
             if part is not None:
                 current = current/part
@@ -278,9 +314,13 @@ class Manager:
             raise RuntimeError('原实例不能删除。')
         if not re.fullmatch(r'codex[1-9][0-9]*', identifier):
             raise RuntimeError('分身标识无效，已拒绝删除。')
-        base = RUNTIME/'clones'/identifier
+        base = profile_storage_root()/identifier
         if identifier == 'codex2' and Path(profile['home']) == RUNTIME/'desktop-b/codex-home':
             base = RUNTIME/'desktop-b'
+        # Profiles created by v0.3.0 lived under the repository runtime.
+        legacy = RUNTIME/'clones'/identifier
+        if not base.exists() and legacy.exists():
+            base = legacy
         if (Path(profile['home']) != base/'codex-home' or
                 Path(profile['ui']) != base/'electron-data'):
             raise RuntimeError('分身路径不是独立受管目录，已拒绝删除。')
@@ -322,7 +362,7 @@ class Manager:
         base = self.clone_directory(profile)
         self.require_stopped(identifier)
         number = self.next_profile_number()
-        destination_root = RUNTIME/'deleted-clones'
+        destination_root = archive_root()
         destination_root.mkdir(mode=0o700, exist_ok=True)
         destination = destination_root/(identifier+'-'+secrets.token_hex(12))
         receipt_path = destination.with_suffix('.json')
@@ -378,7 +418,7 @@ class Manager:
     def create(self):
         number = self.next_profile_number()
         identifier = 'codex'+str(number)
-        base = RUNTIME/'clones'/identifier
+        base = profile_storage_root()/identifier
         # Reserve the number before filesystem writes so a partial create cannot reuse it.
         self.data['next_profile_number'] = number + 1
         self.save()

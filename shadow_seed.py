@@ -26,9 +26,109 @@ ISOLATION_KEYS = {'cli_auth_credentials_store', 'sqlite_home',
                   'forced_chatgpt_workspace_id', 'forced_login_method'}
 
 
+def without_bundled_marketplace(text: str) -> str:
+    """Discard the desktop-owned runtime source, preserving all other settings.
+
+    Each desktop registers its own openai-bundled market on startup. Carrying
+    the source home's temporary marketplace creates a same-name/source conflict.
+    Reject uncommon inline layouts rather than rewriting arbitrary user TOML.
+    """
+    original = tomllib.loads(text)
+    markets = original.get('marketplaces', {})
+    if 'openai-bundled' not in markets:
+        return text
+    headers = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        if line.lstrip().startswith('['):
+            try:
+                # A complete TOML prefix proves this is not a line in a string.
+                tomllib.loads(text[:offset])
+                tree = tomllib.loads(line+'\n__shadow_table_probe__ = true\n')
+                path = []
+                while isinstance(tree, (dict, list)):
+                    if isinstance(tree, list):
+                        tree = tree[-1]
+                    elif '__shadow_table_probe__' in tree:
+                        break
+                    else:
+                        key, tree = next(iter(tree.items()))
+                        path.append(key)
+                headers.append((offset, tuple(path)))
+            except (ValueError, StopIteration):
+                pass
+        offset += len(line)
+    result = []
+    start = 0
+    for index, (position, path) in enumerate(headers):
+        if path[:2] != ('marketplaces', 'openai-bundled'):
+            continue
+        end = headers[index+1][0] if index+1 < len(headers) else len(text)
+        result.append(text[start:position])
+        start = end
+    result.append(text[start:])
+    cleaned = ''.join(result)
+    expected = tomllib.loads(text)
+    expected['marketplaces'].pop('openai-bundled')
+    actual = tomllib.loads(cleaned)
+    # An empty namespace can be implicit or have an explicit [marketplaces].
+    for value in (expected, actual):
+        if value.get('marketplaces') == {}:
+            value.pop('marketplaces')
+    if actual != expected:
+        raise RuntimeError('内置插件市场配置不是独立 TOML 表，无法安全复制；未修改目标配置。')
+    return cleaned
+
+
+def repair_bundled_marketplace(home: Path, can_write) -> bool:
+    """Repair an inherited desktop market in a stopped target, with a backup.
+
+    This leaves login, plugin permissions, and other preferences unchanged.
+    The caller must serialize launches and recheck target process state.
+    """
+    home = Path(home)
+    config = home/'config.toml'
+    if config.is_symlink():
+        raise RuntimeError('配置文件是符号链接，未修复插件市场。')
+    if not config.exists():
+        return False
+    before = config.read_text()
+    market = tomllib.loads(before).get('marketplaces', {}).get('openai-bundled')
+    if not isinstance(market, dict):
+        return False
+    expected = home.resolve()/'.tmp/bundled-marketplaces/openai-bundled'
+    if market.get('source_type') == 'local' and market.get('source') == str(expected):
+        return False
+    cleaned = without_bundled_marketplace(before)
+    if cleaned == before:
+        return False
+    if not can_write():
+        raise RuntimeError('目标分身正在运行，未修复插件市场。')
+    parent = home/'.shadow-backups'
+    if parent.is_symlink():
+        raise RuntimeError('备份目录是符号链接，未修复插件市场。')
+    parent.mkdir(exist_ok=True, mode=0o700)
+    backup = Path(tempfile.mkdtemp(prefix='desktop-marketplace-', dir=parent))
+    previous = backup/'config.toml'
+    fd = os.open(previous, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(before)
+    fd, name = tempfile.mkstemp(prefix='.shadow-config-', suffix='.tmp', dir=home)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(cleaned)
+        if not can_write() or config.is_symlink() or config.read_text() != before:
+            raise RuntimeError('分身或配置状态已改变，保留原配置，未修复插件市场。')
+        os.replace(temporary, config)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return True
+
+
 def safe_config(text: str) -> str:
     """Retain TOML formatting while replacing identity/storage top-level settings."""
-    tomllib.loads(text)
+    text = without_bundled_marketplace(text)
     lines = text.splitlines(keepends=True)
     result = []
     in_table = False
@@ -44,6 +144,50 @@ def safe_config(text: str) -> str:
     if any(k in parsed for k in ISOLATION_KEYS - {'cli_auth_credentials_store'}):
         raise RuntimeError('Unsupported configuration storage override; seed stopped')
     return text
+
+
+def _paused_automation(text: str) -> str:
+    """Copy an automation as a paused template for an independent profile.
+
+    Automation definitions are local user data, but enabling the same schedule
+    in every clone would execute it more than once.  Keep the prompt and
+    schedule intact so the user can enable it deliberately in the destination.
+    """
+    parsed = tomllib.loads(text)
+    if not isinstance(parsed, dict) or not isinstance(parsed.get('status'), str):
+        raise ValueError('automation definition has no supported status')
+    replaced, count = re.subn(
+        r'(?m)^(\s*status\s*=\s*)(["\']).*?\2(\s*)$',
+        r'\1"PAUSED"\3', text, count=1)
+    if count != 1:
+        raise ValueError('automation status is not a top-level TOML field')
+    # Validate the rewritten document before it reaches the destination.
+    result = tomllib.loads(replaced)
+    if result.get('status') != 'PAUSED':
+        raise ValueError('automation pause rewrite failed')
+    return replaced
+
+
+def _copy_safe_data_tree(source: Path, put, *, automations=False) -> int:
+    """Copy user-authored markdown/TOML data without hidden stores or symlinks."""
+    if not source.is_dir() or source.is_symlink():
+        return 0
+    copied = 0
+    for item in sorted(source.rglob('*')):
+        if item.is_symlink() or not item.is_file() or any(part.startswith('.') for part in item.relative_to(source).parts):
+            continue
+        relative = item.relative_to(source)
+        if automations:
+            if relative.name != 'automation.toml' or len(relative.parts) != 2:
+                continue
+            data = _paused_automation(item.read_text()).encode()
+        else:
+            if item.suffix.lower() not in {'.md', '.jsonl'}:
+                continue
+            data = item.read_bytes()
+        put(Path(source.name) / relative, data)
+        copied += 1
+    return copied
 
 
 class ProjectRPC:
@@ -217,6 +361,12 @@ def seed_home(source_home: Path, target_home: Path) -> dict:
             # Preserve executable scripts without preserving broad source permissions.
             if f.stat().st_mode & 0o111:
                 (target_home/f.relative_to(source_home)).chmod(0o700)
+    # Memories are plain local notes, never credentials or the memory repo's
+    # hidden git store.  Each clone receives an independent snapshot.
+    memories_added = _copy_safe_data_tree(source_home/'memories', put)
+    # Schedules are copied as paused templates.  They must be explicitly
+    # enabled in a clone to avoid duplicate execution across accounts.
+    automations_added = _copy_safe_data_tree(source_home/'automations', put, automations=True)
     source = {}
     state_path = target_home/'.codex-global-state.json'
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
@@ -263,4 +413,5 @@ def seed_home(source_home: Path, target_home: Path) -> dict:
     desktop_added = merge_project_state(source, state, server_projects, target_home)
     put(Path('.codex-global-state.json'), json.dumps(state,ensure_ascii=False).encode())
     return {'projects':len(projects),'projects_added':created,'desktop_projects_added':desktop_added,
+            'memories_added':memories_added,'automations_added':automations_added,
             'files':count,'status':'synced'}

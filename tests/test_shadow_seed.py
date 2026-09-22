@@ -80,6 +80,63 @@ class SeedTest(unittest.TestCase):
         mapping = target['app-server-project-id-by-legacy-project-id-by-host']['local:'+str(home.resolve())]
         self.assertEqual(mapping,{'own':'core-a','new':'core-b'})
 
+    def test_seed_copies_memories_and_pauses_automation_templates(self):
+        with tempfile.TemporaryDirectory() as d:
+            source, target = Path(d)/'source', Path(d)/'target'
+            source.mkdir(); target.mkdir()
+            (source/'memories/rollout_summaries').mkdir(parents=True)
+            (source/'memories/MEMORY.md').write_text('local memory')
+            (source/'memories/rollout_summaries/run.md').write_text('summary')
+            automation = source/'automations/demo/automation.toml'
+            automation.parent.mkdir(parents=True)
+            automation.write_text('status = "ACTIVE"\nname = "Demo"\nprompt = "keep"\n')
+            FakeRPC.entries=[]
+            with patch.object(shadow_seed,'ProjectRPC',FakeRPC):
+                result=shadow_seed.seed_home(source,target)
+            self.assertEqual(result['memories_added'],2)
+            self.assertEqual(result['automations_added'],1)
+            self.assertEqual((target/'memories/MEMORY.md').read_text(),'local memory')
+            copied=tomllib.loads((target/'automations/demo/automation.toml').read_text())
+            self.assertEqual(copied['status'],'PAUSED')
+            self.assertEqual(copied['prompt'],'keep')
+
+    def test_seed_drops_only_desktop_owned_marketplace_registration(self):
+        source = '''model = "example"
+[marketplaces."openai-bundled"]
+source_type = "local"
+source = "/parent/home/.tmp/bundled-marketplaces/openai-bundled"
+[marketplaces.community]
+source_type = "git"
+source = "https://example.invalid/team/plugins"
+[plugins."unified-computer-use@openai-bundled"]
+enabled = true
+[plugins."team-tool@community"]
+enabled = true
+[mcp_servers.team]
+command = "team-tool"
+'''
+        result = tomllib.loads(shadow_seed.safe_config(source))
+        self.assertNotIn('openai-bundled',result['marketplaces'])
+        self.assertEqual(result['marketplaces']['community'],tomllib.loads(source)['marketplaces']['community'])
+        self.assertEqual(result['plugins'],tomllib.loads(source)['plugins'])
+        self.assertEqual(result['mcp_servers'],tomllib.loads(source)['mcp_servers'])
+
+    def test_marketplace_header_inside_multiline_value_is_not_removed(self):
+        source = '''notes = """
+[marketplaces.openai-bundled]
+this is a note, not configuration
+"""
+[marketplaces.openai-bundled]
+source_type = "local"
+source = "/parent/runtime"
+[desktop]
+codeFontSize = 14
+'''
+        result = tomllib.loads(shadow_seed.safe_config(source))
+        self.assertEqual(result['notes'],tomllib.loads(source)['notes'])
+        self.assertNotIn('openai-bundled',result.get('marketplaces',{}))
+        self.assertEqual(result['desktop']['codeFontSize'],14)
+
     def test_same_home_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaises(ValueError):

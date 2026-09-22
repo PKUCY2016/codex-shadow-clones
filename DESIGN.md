@@ -24,13 +24,13 @@
 
 `desktop_second.py` 定义安装路径与已核验版本，管理器导入这些常量。实例启动使用桌面应用自身的独立数据目录参数；`shadow_focus.swift` 按进程 ID 聚焦，避免只按应用名称选错窗口。
 
-`shadow_quota.py` 通过安装的官方 Codex app-server 查询账号和额度，不发起模型生成请求。`shadow_seed.py` 复制经过筛选的配置与项目入口。`shadow_history.py` 处理本地历史文件、索引和依赖；`shadow_history_state.py` 合并允许复制的侧边栏状态。
+`shadow_quota.py` 通过安装的官方 Codex app-server 查询账号和额度，不发起模型生成请求。`shadow_seed.py` 复制经过筛选的配置、项目入口、记忆快照和暂停的自动化模板。`shadow_history.py` 处理本地历史文件、索引和依赖；`shadow_history_state.py` 合并允许复制的侧边栏状态。
 
 `scripts/preflight.py` 只读检查系统、依赖、精确桌面版本与必要素材。它不替代离线回归测试，也不证明真实登录或历史界面已可用。
 
 ## 共享和隔离
 
-每个分身有独立的 `CODEX_HOME`、Electron 数据目录、凭据和历史数据库。创建分身不复制原账号登录，使用者在官方窗口分别授权。原实例默认位于 `~/.codex`；分身数据位于仓库私有 `.runtime`。
+每个分身有独立的 `CODEX_HOME`、Electron 数据目录、凭据和历史数据库。创建分身不复制原账号登录，使用者在官方窗口分别授权。原实例默认位于 `~/.codex`；新分身物理数据默认位于短路径 `~/.codex-shadow/<编号>`，注册表和兼容旧分身仍位于仓库私有 `.runtime`。
 
 项目共享原有路径，代码文件的变化对所有打开该目录的实例立即可见。项目列表和配置则是快照，需要再次同步才能更新。当前桌面同时使用项目数据库和界面项目缓存，导入需要保持两者映射一致。
 

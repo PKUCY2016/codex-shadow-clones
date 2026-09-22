@@ -70,6 +70,26 @@ class ManagerTests(unittest.TestCase):
         self.manager.data = {'selected':'codex1', 'auto_switch':True, 'threshold':10,
                              'profiles':[profile(1), profile(2)]}
 
+    def test_open_running_instances_never_repairs_their_configuration(self):
+        with patch.object(manager_module,'repair_bundled_marketplace') as repair, \
+                patch.object(manager_module,'launch_profile') as launch:
+            self.manager.open('codex1')
+            self.manager.open('codex2')
+        repair.assert_not_called()
+        self.assertEqual([call.args[1] for call in launch.call_args_list],[111,222])
+
+    def test_open_stopped_clone_repairs_marketplace_before_launch(self):
+        events=[]
+        def repair(home,can_write):
+            self.assertEqual(home,Path('/fake/home2'))
+            self.assertTrue(can_write())
+            events.append('repair')
+        with patch.object(manager_module,'process_map',return_value={'codex1':111,'codex2':None}), \
+                patch.object(manager_module,'repair_bundled_marketplace',side_effect=repair), \
+                patch.object(manager_module,'launch_profile',side_effect=lambda *_:events.append('launch')):
+            self.manager.open('codex2')
+        self.assertEqual(events,['repair','launch'])
+
     def refresh_with(self, current, target):
         by_home = {'/fake/home1':current, '/fake/home2':target}
         with patch.object(manager_module, 'read_quota', side_effect=lambda home: copy.deepcopy(by_home[str(home)])):
@@ -419,12 +439,37 @@ class DeleteCloneTests(unittest.TestCase):
             self.assertEqual(manager.create(), 'codex3')
         self.assertEqual(manager.data['next_profile_number'], 4)
 
+    def test_new_profiles_use_short_physical_root(self):
+        short_root = self.runtime/'short-root'
+        with patch.object(manager_module, 'profile_storage_root', return_value=short_root), \
+             patch.object(manager_module, 'seed_home', return_value={}), \
+             patch('shadow_history.import_history', return_value={}), \
+             patch.object(manager_module, 'merge_imported_sidebar'), patch.object(self.manager, 'open'):
+            self.assertEqual(self.manager.create(), 'codex3')
+        created = self.manager.profile('codex3')
+        self.assertEqual(Path(created['home']), short_root/'codex3'/'codex-home')
+        self.assertEqual(Path(created['ui']), short_root/'codex3'/'electron-data')
+        self.assertFalse((self.runtime/'clones/codex3').exists())
+
     def test_old_registry_skips_existing_and_archived_directories(self):
         (self.runtime/'clones/codex8').mkdir()
         (self.runtime/'deleted-clones/codex12-fixture').mkdir(parents=True)
         self.assertEqual(self.manager.next_profile_number(), 13)
         self.manager.data['next_profile_number'] = 20
         self.assertEqual(self.manager.next_profile_number(), 20)
+
+    def test_short_root_profile_deletes_to_short_root_archive(self):
+        short = self.runtime/'short-root'
+        short_clone = short/'codex2'
+        short_clone.mkdir(parents=True)
+        (short_clone/'codex-home').mkdir()
+        (short_clone/'electron-data').mkdir()
+        self.manager.profile('codex2').update(home=str(short_clone/'codex-home'),
+                                              ui=str(short_clone/'electron-data'))
+        with patch.object(manager_module, 'profile_storage_root', return_value=short):
+            self.delete()
+        receipt_path = next((short/'deleted-clones').glob('*.json'))
+        self.assertTrue(Path(json.loads(receipt_path.read_text())['archivedPath']).is_dir())
 
 
 class ManagerUpdateAndShutdownTests(unittest.TestCase):
