@@ -128,6 +128,12 @@ def launch(restart=False):
                Path(__file__).parent/'assets'/'AppIcon.icns']
     if not binary.exists() or any(p.stat().st_mtime > binary.stat().st_mtime for p in sources):
         build_menubar.build()
+    if not restart:
+        current = _manager()
+        if current and current[1].get('update', {}).get('currentVersion') != build_menubar.CURRENT_VERSION:
+            # A normal click after updating must not leave the old manager
+            # serving the dashboard. stop_manager still refuses busy work.
+            restart = True
     helper = _reloader() if restart else None
     if restart:
         stop_manager()

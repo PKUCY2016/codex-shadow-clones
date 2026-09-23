@@ -99,6 +99,26 @@ class RestartTests(unittest.TestCase):
                 request.side_effect = urllib.error.URLError(ConnectionRefusedError())
                 self.assertIsNone(launcher._manager())
 
+    def test_plain_launch_reloads_stale_manager_before_opening_menu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory)/'Codex Shadow Clones.app'
+            binary = app/'Contents/MacOS/ShadowMenu'
+            binary.parent.mkdir(parents=True)
+            binary.touch()
+            helper = Path(directory)/'shadow-reload'
+            fresh = {'profiles': [], 'working': False,
+                     'update': {'currentVersion': launcher.build_menubar.CURRENT_VERSION}}
+            with patch.object(launcher.build_menubar, 'APP', app), \
+                 patch.object(launcher, '_manager', side_effect=[(self.info, self.state),
+                                                                   (self.info, fresh)]), \
+                 patch.object(launcher, 'stop_manager') as stop, \
+                 patch.object(launcher, 'dashboard'), \
+                 patch.object(launcher, '_reloader', return_value=helper), \
+                 patch.object(launcher.subprocess, 'run') as run:
+                launcher.launch()
+            stop.assert_called_once_with()
+            self.assertEqual(run.call_args.args[0], [str(helper), str(app)])
+
 
 if __name__ == '__main__':
     unittest.main()

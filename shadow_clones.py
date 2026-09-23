@@ -125,8 +125,12 @@ def launch_profile(profile, pid=None):
         focus_pid(pid)
         return
     if profile['source']:
-        # Do not spawn another original instance with shared databases.
-        raise RuntimeError('原实例未运行，请从应用程序打开原 Codex。')
+        # The original profile owns the default Codex home. Ask macOS to open
+        # the installed app without ``-n`` so it reuses the official instance
+        # instead of creating a second process with shared databases.
+        subprocess.run(['/usr/bin/open', '-a', str(APP)],
+                       env=desktop_environment(os.environ), check=True)
+        return
     env = desktop_environment(os.environ)
     subprocess.run(['/usr/bin/open', '-n', '--env', 'CODEX_HOME='+profile['home'],
                     '--env', 'CODEX_ELECTRON_USER_DATA_PATH='+profile['ui'], str(APP),

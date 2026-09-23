@@ -204,11 +204,12 @@ class ProcessIsolationTests(unittest.TestCase):
             focus.assert_called_once_with(222)
             run.assert_not_called()
 
-    def test_stopped_original_never_launched_with_shared_db(self):
+    def test_stopped_original_opens_official_app_without_shared_db_flags(self):
         with patch.object(manager_module, 'check_version'), patch.object(manager_module.subprocess,'run') as run:
-            with self.assertRaises(RuntimeError):
-                manager_module.launch_profile(profile(1))
-            run.assert_not_called()
+            manager_module.launch_profile(profile(1))
+        self.assertEqual(run.call_args.args[0], ['/usr/bin/open', '-a', str(manager_module.APP)])
+        self.assertNotIn('CODEX_HOME', run.call_args.kwargs['env'])
+        self.assertNotIn('CODEX_ELECTRON_USER_DATA_PATH', run.call_args.kwargs['env'])
 
     def test_process_matching_keeps_distinct_profiles_with_spaces(self):
         executable = str(manager_module.APP/'Contents/MacOS/ChatGPT')
