@@ -47,7 +47,7 @@
 |---|---|
 | 系统 | macOS；Linux / Windows 不支持 |
 | 桌面应用 | `/Applications/ChatGPT.app`，Bundle ID 为 `com.openai.codex` |
-| 已适配版本 | **26.915.31945，build 9922**；不匹配时停止，不绕过版本检查 |
+| 已适配版本 | **26.917.71314，build 10954**；不匹配时停止，不绕过版本检查 |
 | Python | **3.11+**，仅标准库，无 pip 依赖；当前验证环境为 Python 3.14 |
 | 本地编译工具 | Xcode Command Line Tools，提供 `swiftc`、`codesign` |
 | 原实例 | 正常安装且已有项目的 Codex；当前默认来源是 `~/.codex` |

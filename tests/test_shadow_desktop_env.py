@@ -1,10 +1,33 @@
 import os
+from pathlib import Path
+import plistlib
+import tempfile
 import unittest
 from unittest.mock import patch
+import desktop_second
 import shadow_clones
 
 
 class DesktopEnvironmentTests(unittest.TestCase):
+    def test_installed_build_is_accepted_but_other_builds_stay_blocked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory)/'ChatGPT.app'
+            contents = app/'Contents'
+            contents.mkdir(parents=True)
+            plist = contents/'Info.plist'
+            info = {'CFBundleIdentifier':'com.openai.codex',
+                    'CFBundleShortVersionString':'26.917.71314',
+                    'CFBundleVersion':'10954'}
+            with patch.object(shadow_clones, 'APP', app), patch.object(desktop_second, 'APP', app), \
+                    patch.object(desktop_second, 'BASE', Path(directory)/'profile'):
+                plist.write_bytes(plistlib.dumps(info))
+                shadow_clones.check_version()
+                self.assertTrue(desktop_second.prepare()[0].is_dir())
+                info['CFBundleVersion'] = 'unknown-build'
+                plist.write_bytes(plistlib.dumps(info))
+                with self.assertRaisesRegex(RuntimeError, '版本改变'):
+                    shadow_clones.check_version()
+
     def test_launch_does_not_borrow_parent_desktop_bridge_or_task_identity(self):
         parent = {'CODEX_APP_TOOLS_PIPE_PATH':'/tmp/parent-desktop.sock',
                   'CODEX_THREAD_ID':'parent-task','CODEX_SESSION_ID':'parent-session',

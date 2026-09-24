@@ -10,7 +10,7 @@ https://github.com/PKUCY2016/codex-shadow-clones
 
 1. 如果还没检出仓库，先 git clone 到一个新目录；不要覆盖现有目录或删除用户文件。阅读 README.md、docs/USAGE.md 和当前源代码。
 2. 先检查 uname -s、python3 --version、xcode-select -p、swiftc --version。要求 macOS、Python 3.11+、Xcode Command Line Tools。缺依赖时报告实际缺项，不假称已安装。Python 仅使用标准库，无需 pip install。
-3. 只读取 /Applications/ChatGPT.app/Contents/Info.plist 核验 Bundle ID、版本和 build。当前支持 com.openai.codex、26.915.31945、9922；同时核对 desktop_second.py 的 CHECKED。如果不匹配，停止启动并报告，不删除版本检查、不改应用签名、不假定新版兼容。
+3. 只读取 /Applications/ChatGPT.app/Contents/Info.plist 核验 Bundle ID、版本和 build。当前支持 com.openai.codex、26.917.71314、10954；同时核对 desktop_second.py 的 CHECKED。如果不匹配，停止启动并报告，不删除版本检查、不改应用签名、不假定新版兼容。
 4. 默认源目录是 ~/.codex。如我使用其他原实例目录，先报告当前不支持的差异，不擅自改全局 HOME 或替换原账号。不要读取、打印、上传或要求我粘贴 auth.json、令牌、授权链接、私人会话。不要把 .runtime 内容提交到 Git。
 5. 在仓库先运行只读预检，再运行离线测试：
    python3 scripts/preflight.py

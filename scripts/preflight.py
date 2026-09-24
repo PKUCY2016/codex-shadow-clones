@@ -6,19 +6,22 @@ import shutil
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from desktop_second import APP, CHECKED
+
 
 def main():
     root = Path(__file__).resolve().parents[1]
     checks = [('macOS', platform.system() == 'Darwin'),
               ('Python >= 3.11', sys.version_info >= (3, 11)),
               ('Swift compiler (Xcode Command Line Tools)', bool(shutil.which('swiftc')))]
-    app = Path('/Applications/ChatGPT.app')
+    app = APP
     try:
         with (app/'Contents/Info.plist').open('rb') as stream:
             info = plistlib.load(stream)
-        checks.append(('Codex 26.915.31945 (9922)',
+        checks.append((f'Codex {CHECKED[0]} ({CHECKED[1]})',
             (info.get('CFBundleIdentifier'), info.get('CFBundleShortVersionString'), info.get('CFBundleVersion'))
-            == ('com.openai.codex', '26.915.31945', '9922')))
+            == ('com.openai.codex', *CHECKED)))
     except OSError:
         checks.append(('Codex at /Applications/ChatGPT.app', False))
     for name in ('assets/logo.svg', 'assets/AppIcon.icns', 'shadow_menubar.swift', 'shadow_dashboard.html',

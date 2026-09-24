@@ -10,7 +10,7 @@ from shadow_desktop_env import desktop_environment
 ROOT = Path(__file__).resolve().parent
 BASE = ROOT / '.runtime' / 'desktop-b'
 APP = Path('/Applications/ChatGPT.app')
-CHECKED = ('26.915.31945', '9922')
+CHECKED = ('26.917.71314', '10954')
 
 
 def prepare():
