@@ -191,13 +191,14 @@ def _copy_safe_data_tree(source: Path, put, *, automations=False) -> int:
 
 
 class ProjectRPC:
-    def __init__(self, home: Path):
-        env = dict(os.environ)
+    def __init__(self, home: Path, *, binary: Path = BINARY, environment=None, timeout=20):
+        env = dict(os.environ if environment is None else environment)
         for k in ('CODEX_SQLITE_HOME', 'CODEX_ELECTRON_USER_DATA_PATH',
                   'OPENAI_API_KEY', 'CODEX_API_KEY'):
             env.pop(k, None)
         env['CODEX_HOME'] = str(home)
-        self.proc = subprocess.Popen([str(BINARY), 'app-server'], env=env,
+        self.timeout = timeout
+        self.proc = subprocess.Popen([str(binary), 'app-server'], env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, bufsize=1)
         self.lines = queue.Queue()
@@ -221,7 +222,7 @@ class ProjectRPC:
         self.serial += 1
         self.proc.stdin.write(json.dumps({'id':self.serial,'method':method,'params':params})+'\n')
         self.proc.stdin.flush()
-        deadline = time.monotonic()+20
+        deadline = time.monotonic()+self.timeout
         while True:
             try:
                 line = self.lines.get(timeout=max(0.01,deadline-time.monotonic()))

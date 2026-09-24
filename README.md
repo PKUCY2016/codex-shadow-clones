@@ -47,13 +47,13 @@
 |---|---|
 | 系统 | macOS；Linux / Windows 不支持 |
 | 桌面应用 | `/Applications/ChatGPT.app`，Bundle ID 为 `com.openai.codex` |
-| 已适配版本 | **26.917.71314，build 10954**；不匹配时停止，不绕过版本检查 |
+| 已核查版本 | **26.917.71314，build 10954**；后续 build 需通过本地自动兼容探测，否则停止 |
 | Python | **3.11+**，仅标准库，无 pip 依赖；当前验证环境为 Python 3.14 |
 | 本地编译工具 | Xcode Command Line Tools，提供 `swiftc`、`codesign` |
 | 原实例 | 正常安装且已有项目的 Codex；当前默认来源是 `~/.codex` |
 | 登录 | 由你本人在官方窗口完成；不要把密码、令牌或回调 URL 发给助手 |
 
-独立实例的 Electron 参数和历史数据库结构不是稳定公开接口。新版本需要重新适配，不能仅改版本常量就视为兼容。
+独立实例的 Electron 参数和历史数据库结构不是稳定公开接口。遇到未登记的新 build，程序会自动核查应用签名、独立数据目录启动接口，并在无账号的临时目录中测试官方 `app-server` 的项目列表与关键数据库表结构；全部通过才允许启动分身。探测不读取现有账号或聊天，也不发模型请求。它不能证明所有界面或插件功能兼容；探测失败时保留原数据并等待适配，不应绕过检查。
 
 ```bash
 git clone https://github.com/PKUCY2016/codex-shadow-clones.git
@@ -65,7 +65,8 @@ python3 -m unittest discover -s tests -p 'test_shadow*.py' -v
 python3 launch_shadow.py
 ```
 
-`python3 scripts/preflight.py` 只读检查系统、依赖、精确桌面版本与必要素材；失败时先解决缺项，不绕过版本检查。
+`python3 scripts/preflight.py` 检查系统、依赖、桌面应用与必要素材。对未登记的新 build，它只在自动清理的临时目录中启动无账号的本地项目接口；失败时先查看具体缺项，不绕过兼容检查。
+要在当前已核查版本上主动运行同一套探测，可用 `python3 scripts/preflight.py --probe`。
 
 没有编译工具时，先用 `xcode-select --install` 安装。启动会本地编译菜单栏应用，并打开带访问令牌的管理面板。之后可双击仓库中的 **Codex影分身.command**。
 
@@ -103,7 +104,7 @@ python3 launch_shadow.py --restart
 
 打开本仓库，将下面一段发给 Codex，或直接提供 [readme.txt](readme.txt)：
 
-> 请读取本仓库 README.md 和 readme.txt，按其中的检查、测试、启动步骤安装 Codex 影分身。先核验 macOS、Python、Swift 与指定 Codex 桌面版本；版本不符请报告，不能移除检查。不要读取或输出凭据、私人会话内容，不关闭正在运行的任务。检查通过后运行离线测试并启动管理面板；首次登录由我本人完成。最后报告实际完成项和仍需我操作的步骤。
+> 请读取本仓库 README.md 和 readme.txt，按其中的检查、测试、启动步骤安装 Codex 影分身。先核验 macOS、Python、Swift 并运行 Codex 桌面兼容探测；探测失败请报告，不能移除检查。不要读取或输出凭据、私人会话内容，不关闭正在运行的任务。检查通过后运行离线测试并启动管理面板；首次登录由我本人完成。最后报告实际完成项和仍需我操作的步骤。
 
 ## 共享与隔离
 

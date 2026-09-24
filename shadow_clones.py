@@ -17,7 +17,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-from desktop_second import APP, CHECKED
+from desktop_second import APP
+from shadow_compat import check_compatibility
 from shadow_seed import seed_home, repair_bundled_marketplace
 from shadow_quota import read_quota
 from shadow_updates import UpdateChecker
@@ -81,12 +82,7 @@ def merge_imported_sidebar(source, target):
 
 
 def check_version():
-    import plistlib
-    with (APP / 'Contents/Info.plist').open('rb') as handle:
-        info = plistlib.load(handle)
-    if info.get('CFBundleIdentifier') != 'com.openai.codex' or (
-        info.get('CFBundleShortVersionString'), info.get('CFBundleVersion')) != CHECKED:
-        raise RuntimeError('Codex 版本改变，请重新核查分身启动参数。')
+    return check_compatibility(APP)
 
 
 def process_map(profiles):

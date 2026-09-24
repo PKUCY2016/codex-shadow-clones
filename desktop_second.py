@@ -3,22 +3,14 @@
 import json
 import os
 from pathlib import Path
-import plistlib
 import subprocess
 from shadow_desktop_env import desktop_environment
+from shadow_compat import APP, check_compatibility
 
 ROOT = Path(__file__).resolve().parent
 BASE = ROOT / '.runtime' / 'desktop-b'
-APP = Path('/Applications/ChatGPT.app')
-CHECKED = ('26.917.71314', '10954')
-
-
 def prepare():
-    with (APP / 'Contents/Info.plist').open('rb') as handle:
-        info = plistlib.load(handle)
-    version = (info.get('CFBundleShortVersionString'), info.get('CFBundleVersion'))
-    if info.get('CFBundleIdentifier') != 'com.openai.codex' or version != CHECKED:
-        raise RuntimeError('Codex 版本已改变，请先重新核查独立实例参数；未启动第二实例。')
+    check_compatibility(APP)
     home = BASE / 'codex-home'
     ui = BASE / 'electron-data'
     for directory in (BASE, home, ui):
