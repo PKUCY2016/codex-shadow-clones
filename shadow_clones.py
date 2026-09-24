@@ -525,6 +525,24 @@ class Manager:
             # Busy service or unverifiable process state: retry on the next poll.
             return
 
+    def prune_old_backups(self):
+        """Bound backups for managed clones while the operation lock is held."""
+        from shadow_backups import prune_backups
+        deleted = errors = 0
+        for profile in list(self.data['profiles']):
+            if profile.get('source') is not False:
+                continue
+            home = Path(profile['home'])
+            backup_root = home/'.shadow-backups'
+            if not backup_root.exists() and not backup_root.is_symlink():
+                continue
+            try:
+                self.clone_directory(profile)
+                deleted += prune_backups(home)['deleted']
+            except (OSError, ValueError, RuntimeError):
+                errors += 1
+        return deleted, errors
+
     def background_action(self, action, data):
         try:
             if action == 'create':
@@ -537,9 +555,16 @@ class Manager:
             with self.lock:
                 self.message = '历史复制或创建未完成；已保存的进度和原账号均保留，可重新操作继续。'
         finally:
-            with self.lock:
-                self.working = False
-            self.operation.release()
+            try:
+                _, cleanup_errors = self.prune_old_backups()
+            except Exception:
+                cleanup_errors = 1
+            finally:
+                with self.lock:
+                    if cleanup_errors:
+                        self.message += ' 部分旧备份未能清理，请检查本地备份目录。'
+                    self.working = False
+                self.operation.release()
 
     def action(self, data):
         action = data.get('action')
@@ -583,6 +608,13 @@ class Manager:
                     self.save()
                 else:
                     raise ValueError('invalid action')
+                if action in ('open', 'sync'):
+                    try:
+                        _, cleanup_errors = self.prune_old_backups()
+                    except Exception:
+                        cleanup_errors = 1
+                    if cleanup_errors:
+                        self.message += ' 部分旧备份未能清理，请检查本地备份目录。'
         finally:
             self.operation.release()
 

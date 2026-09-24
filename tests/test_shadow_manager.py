@@ -78,6 +78,44 @@ class ManagerTests(unittest.TestCase):
         repair.assert_not_called()
         self.assertEqual([call.args[1] for call in launch.call_args_list],[111,222])
 
+    def test_managed_clone_prunes_old_history_backups(self):
+        base = manager_module.RUNTIME/'clones'/'codex2'
+        home = base/'codex-home'
+        (base/'electron-data').mkdir(parents=True)
+        backup_root = home/'.shadow-backups'
+        sqlite = b'SQLite format 3\x00' + b'x'
+        for stamp in (1, 2):
+            folder = backup_root/f'history-{stamp}'
+            folder.mkdir(parents=True)
+            for name in ('state_5.sqlite', 'thread_history_1.sqlite'):
+                (folder/name).write_bytes(sqlite)
+        self.manager.data['profiles'][1].update(home=str(home), ui=str(base/'electron-data'))
+        deleted, errors = self.manager.prune_old_backups()
+        self.assertEqual((deleted, errors), (1, 0))
+        self.assertFalse((backup_root/'history-1').exists())
+        self.assertTrue((backup_root/'history-2').exists())
+
+    def test_history_job_prunes_before_releasing_operation_lock(self):
+        self.manager.operation.acquire()
+        self.manager.working = True
+        with patch.object(self.manager, 'unified_history'), \
+                patch.object(self.manager, 'prune_old_backups', return_value=(2, 0)) as prune:
+            self.manager.background_action('history_all', {})
+        prune.assert_called_once_with()
+        self.assertFalse(self.manager.working)
+        self.assertTrue(self.manager.operation.acquire(blocking=False))
+        self.manager.operation.release()
+
+    def test_broken_backup_link_is_reported_without_following_it(self):
+        base = manager_module.RUNTIME/'clones'/'codex2'
+        home = base/'codex-home'
+        (base/'electron-data').mkdir(parents=True)
+        home.mkdir()
+        (home/'.shadow-backups').symlink_to(base/'missing', target_is_directory=True)
+        self.manager.data['profiles'][1].update(home=str(home), ui=str(base/'electron-data'))
+        self.assertEqual(self.manager.prune_old_backups(), (0, 1))
+        self.assertTrue((home/'.shadow-backups').is_symlink())
+
     def test_open_stopped_clone_repairs_marketplace_before_launch(self):
         events=[]
         def repair(home,can_write):

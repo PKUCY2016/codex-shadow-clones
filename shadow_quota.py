@@ -59,6 +59,15 @@ def normalize_limits(payload):
     return result
 
 
+def reset_credit_count(payload):
+    """Return the server-reported earned reset count, never the detail row count."""
+    credits = payload.get('rateLimitResetCredits')
+    if not isinstance(credits, dict):
+        return None
+    count = credits.get('availableCount')
+    return count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else None
+
+
 class _RPC:
     def __init__(self, process, deadline):
         self.process = process
@@ -152,7 +161,7 @@ def read_quota(codex_home, timeout=20, codex_binary=None):
     coreRemainingPercent: minimum known Codex window, None when unavailable.
     No forced token refresh, login, logout, reset-credit use, or model turn.
     """
-    result = {'status': 'unknown', 'account': None, 'limits': [],
+    result = {'status': 'unknown', 'account': None, 'limits': [], 'resetCreditCount': None,
               'coreRemainingPercent': None, 'checkedAt': int(time.time()), 'error': None}
     home = Path(codex_home).expanduser().resolve()
     if not home.is_dir():
@@ -198,7 +207,9 @@ def read_quota(codex_home, timeout=20, codex_binary=None):
         if account.get('type') != 'chatgpt':
             result['error'] = 'subscription_quota_unavailable'
             return result
-        result['limits'] = normalize_limits(rpc.call('account/rateLimits/read'))
+        limits_response = rpc.call('account/rateLimits/read')
+        result['limits'] = normalize_limits(limits_response)
+        result['resetCreditCount'] = reset_credit_count(limits_response)
         core = next((bucket for bucket in result['limits'] if bucket['isCodex']), None)
         if core:
             values = [window['remainingPercent'] for window in core['windows']]

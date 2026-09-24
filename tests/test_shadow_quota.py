@@ -69,6 +69,21 @@ class QuotaTests(unittest.TestCase):
         self.assertEqual(result['coreRemainingPercent'], 5)
         self.assertEqual([x['isCodex'] for x in result['limits']], [False, True])
 
+    def test_reset_credit_count_uses_authoritative_total(self):
+        result = self.run_scenario({'limits': {
+            'rateLimits': {'primary': {'usedPercent': 25, 'windowDurationMins': 10080}},
+            'rateLimitResetCredits': {'availableCount': 2, 'credits': [{'id': 'one'}]}}})
+        self.assertEqual(result['resetCreditCount'], 2)
+
+    def test_reset_credit_zero_and_unknown_are_distinct(self):
+        for value, expected in [(0, 0), (None, None), (True, None), (-1, None), ('2', None)]:
+            result = self.run_scenario({'limits': {
+                'rateLimits': {'primary': {'usedPercent': 25}},
+                'rateLimitResetCredits': {'availableCount': value}}})
+            self.assertEqual(result['resetCreditCount'], expected)
+        result = self.run_scenario({})
+        self.assertIsNone(result['resetCreditCount'])
+
     def test_unknown_usage_never_becomes_full_quota(self):
         for windows in ({'primary': {'usedPercent': None}}, {'primary': {'usedPercent':20}, 'secondary': {}}, {'primary': None, 'secondary': {'usedPercent': 10}}, {}):
             result = self.run_scenario({'limits': {'rateLimits': windows}})
